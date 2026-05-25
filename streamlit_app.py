@@ -2,8 +2,8 @@ import streamlit as st
 import json
 import uuid
 import os
+import requests
 from datetime import datetime
-from mistralai import Mistral
 
 # ─────────────────────────────────────────────
 # Page config
@@ -44,7 +44,6 @@ st.markdown("""
         border-radius: 0 8px 8px 0;
         padding: 12px 16px;
         margin-top: 12px;
-        font-style: italic;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -57,14 +56,14 @@ DEMO_STARTUPS = [
         "id": "s1",
         "project_name": "PayFlow Africa",
         "tagline": "Instant cross-border payments for Africa",
-        "full_description": "PayFlow Africa enables businesses and individuals to send money across 30+ African countries in seconds using stablecoin rails.",
+        "full_description": "PayFlow Africa enables businesses and individuals to send money across Africa using stablecoin rails.",
         "category": "FinTech",
         "target_funding": "$2M",
         "current_stage": "Seed",
         "team_size": 8,
-        "target_market": "MENA, Sub-Saharan Africa",
+        "target_market": "MENA, Africa",
         "competition_analysis": "Competing with M-Pesa and WorldRemit.",
-        "revenue_model": "Transaction fee + API licensing",
+        "revenue_model": "Transaction fees",
         "current_customers": "1,200 SMEs",
         "financial_projections": "$800K ARR",
         "website_url": "",
@@ -83,13 +82,13 @@ DEMO_STARTUPS = [
         "current_stage": "Series A",
         "team_size": 12,
         "target_market": "Middle East, Africa",
-        "competition_analysis": "Targets underserved hospitals.",
+        "competition_analysis": "Competing with Aidoc.",
         "revenue_model": "SaaS subscription",
         "current_customers": "45 hospitals",
         "financial_projections": "$1.8M ARR",
         "website_url": "",
         "pitch_deck_url": "",
-        "business_plan": "Expand to India",
+        "business_plan": "Expand globally",
         "product_demo_url": "",
         "created_at": datetime.utcnow().isoformat(),
     },
@@ -105,7 +104,7 @@ if "match_results" not in st.session_state:
     st.session_state.match_results = None
 
 if "api_key" not in st.session_state:
-    st.session_state.api_key = os.environ.get("l1H8pIdvNALk0aNxI1CP6SL0hwJHA1YK", "")
+    st.session_state.api_key = ""
 
 # ─────────────────────────────────────────────
 # Helpers
@@ -129,52 +128,47 @@ STAGE_ORDER = [
     "Seed",
     "Series A",
     "Series B",
-    "Profitable",
+    "Profitable"
 ]
-
 
 def get_categories():
     return sorted(set(s["category"] for s in st.session_state.startups))
 
-
 def get_stages():
     return sorted(
         set(s["current_stage"] for s in st.session_state.startups),
-        key=lambda x: STAGE_ORDER.index(x) if x in STAGE_ORDER else 99,
+        key=lambda x: STAGE_ORDER.index(x)
+        if x in STAGE_ORDER else 99,
     )
 
-
 # ─────────────────────────────────────────────
-# AI Matching
+# Mistral AI Matching
 # ─────────────────────────────────────────────
-def run_ai_match(investor: dict, top_k: int) -> dict:
-
-    client = Mistral(api_key=st.session_state.api_key)
+def run_ai_match(investor: dict, top_k: int):
 
     startup_summaries = []
 
     for i, s in enumerate(st.session_state.startups):
         startup_summaries.append(f"""
-[{i+1}] ID:{s['id']}
-Name:{s['project_name']}
-Category:{s['category']}
-Stage:{s['current_stage']}
-Funding:{s['target_funding']}
-Team:{s['team_size']}
-Market:{s['target_market']}
-Revenue:{s['revenue_model']}
-Customers:{s.get('current_customers','n/a')}
-Competition:{s.get('competition_analysis','n/a')}
-Financials:{s.get('financial_projections','n/a')}
-Description:{s['full_description']}
+[{i+1}]
+ID: {s['id']}
+Name: {s['project_name']}
+Category: {s['category']}
+Stage: {s['current_stage']}
+Funding: {s['target_funding']}
+Team: {s['team_size']}
+Market: {s['target_market']}
+Revenue: {s['revenue_model']}
+Customers: {s.get('current_customers', 'N/A')}
+Competition: {s.get('competition_analysis', 'N/A')}
+Financials: {s.get('financial_projections', 'N/A')}
+Description: {s['full_description']}
 """)
 
     prompt = f"""
-You are a senior startup investment analyst.
+You are a senior VC investment analyst.
 
-Analyze the startups and recommend the best
-{min(top_k, len(st.session_state.startups))}
-matches for this investor.
+Analyze the startups below and recommend the BEST {top_k} matches.
 
 INVESTOR PROFILE:
 Name: {investor['name']}
@@ -186,52 +180,64 @@ Risk Appetite: {investor.get('risk', 'Medium')}
 Sectors to Avoid: {investor.get('avoid', 'None')}
 Notes: {investor.get('notes', 'None')}
 
-STARTUPS DATABASE:
+STARTUPS:
 {''.join(startup_summaries)}
 
-Return ONLY valid JSON:
+Return ONLY VALID JSON.
 
+Format:
 {{
-  "matches":[
+  "matches": [
     {{
-      "startup_id":"<id>",
-      "startup_name":"<name>",
-      "match_score":95,
-      "match_summary":"summary",
-      "key_strengths":["s1","s2"],
-      "key_risks":["r1","r2"],
-      "recommendation":"recommendation"
+      "startup_id": "id",
+      "startup_name": "name",
+      "match_score": 90,
+      "match_summary": "summary",
+      "key_strengths": ["a", "b", "c"],
+      "key_risks": ["a", "b"],
+      "recommendation": "recommendation"
     }}
   ],
-  "overall_analysis":"summary"
+  "overall_analysis": "summary"
 }}
 """
 
-    response = client.chat.complete(
-        model="mistral-large-latest",
-        messages=[
+    headers = {
+        "Authorization": f"Bearer {st.session_state.api_key}",
+        "Content-Type": "application/json"
+    }
+
+    payload = {
+        "model": "mistral-large-latest",
+        "messages": [
             {
                 "role": "user",
                 "content": prompt
             }
         ],
-        temperature=0.3,
-        max_tokens=2000,
+        "temperature": 0.7,
+        "max_tokens": 2000
+    }
+
+    response = requests.post(
+        "https://api.mistral.ai/v1/chat/completions",
+        headers=headers,
+        json=payload,
+        timeout=120
     )
 
-    raw = response.choices[0].message.content.strip()
+    if response.status_code != 200:
+        raise Exception(f"API Error: {response.text}")
 
-    raw = raw.replace("```json", "").replace("```", "").strip()
+    result = response.json()
 
-    try:
-        return json.loads(raw)
+    raw = result["choices"][0]["message"]["content"]
 
-    except Exception:
-        return {
-            "matches": [],
-            "overall_analysis": raw
-        }
+    raw = raw.replace("```json", "")
+    raw = raw.replace("```", "")
+    raw = raw.strip()
 
+    return json.loads(raw)
 
 # ─────────────────────────────────────────────
 # Sidebar
@@ -239,7 +245,7 @@ Return ONLY valid JSON:
 with st.sidebar:
 
     st.markdown("## 🚀 VentureMatch")
-    st.markdown("AI-powered startup–investor matching platform")
+    st.markdown("AI startup-investor matching")
 
     st.divider()
 
@@ -249,16 +255,16 @@ with st.sidebar:
         "API Key",
         value=st.session_state.api_key,
         type="password",
-        placeholder="Your Mistral API key...",
+        placeholder="Enter Mistral API key",
         label_visibility="collapsed",
     )
 
-    if st.button("Save Key", use_container_width=True):
+    if st.button("Save API Key", use_container_width=True):
         st.session_state.api_key = api_input
-        st.success("Key saved!")
+        st.success("API Key saved!")
 
     if st.session_state.api_key:
-        st.success("✅ API key connected")
+        st.success("✅ API Connected")
     else:
         st.warning("⚠️ Add your Mistral API key")
 
@@ -268,36 +274,28 @@ with st.sidebar:
 
     st.markdown("### 📊 Database Stats")
 
-    col1, col2 = st.columns(2)
+    c1, c2 = st.columns(2)
 
-    col1.metric("Startups", len(startups))
-    col2.metric("Categories", len(get_categories()))
+    c1.metric("Startups", len(startups))
+    c2.metric("Categories", len(get_categories()))
 
-    col1.metric("Stages", len(get_stages()))
+    c1.metric("Stages", len(get_stages()))
 
     avg_team = (
         sum(s["team_size"] for s in startups)
         // max(len(startups), 1)
     )
 
-    col2.metric("Avg Team", avg_team)
-
-    st.divider()
-
-    if st.button("🔄 Reset Demo Data", use_container_width=True):
-        st.session_state.startups = DEMO_STARTUPS.copy()
-        st.session_state.match_results = None
-        st.success("Reset complete!")
-        st.rerun()
+    c2.metric("Avg Team", avg_team)
 
 # ─────────────────────────────────────────────
 # Main UI
 # ─────────────────────────────────────────────
-st.markdown("# 🚀 VentureMatch")
-st.markdown("*AI-powered startup–investor matching · powered by Mistral AI*")
+st.title("🚀 VentureMatch")
+st.markdown("AI-powered startup-investor matching using Mistral AI")
 
-tab_db, tab_add, tab_match = st.tabs([
-    "📋 Startup Database",
+tab1, tab2, tab3 = st.tabs([
+    "📋 Database",
     "➕ Add Startup",
     "🤖 AI Match"
 ])
@@ -305,63 +303,47 @@ tab_db, tab_add, tab_match = st.tabs([
 # ─────────────────────────────────────────────
 # TAB 1
 # ─────────────────────────────────────────────
-with tab_db:
+with tab1:
 
-    st.markdown("### All Startups")
+    st.subheader("Startup Database")
 
     startups = st.session_state.startups
 
-    if not startups:
-        st.info("No startups available.")
+    for s in startups:
 
-    else:
+        icon = CATEGORY_COLORS.get(s["category"], "⚫")
 
-        search = st.text_input(
-            "Search",
-            placeholder="Search startup..."
-        )
+        with st.expander(
+            f"{icon} {s['project_name']} — {s['current_stage']}"
+        ):
 
-        filtered = startups
+            c1, c2, c3 = st.columns(3)
 
-        if search:
-            q = search.lower()
+            c1.markdown(f"**Category:** {s['category']}")
+            c1.markdown(f"**Funding:** {s['target_funding']}")
 
-            filtered = [
-                s for s in filtered
-                if q in s["project_name"].lower()
-                or q in s["full_description"].lower()
-            ]
+            c2.markdown(f"**Stage:** {s['current_stage']}")
+            c2.markdown(f"**Team:** {s['team_size']}")
 
-        st.caption(f"Showing {len(filtered)} startups")
+            c3.markdown(f"**Market:** {s['target_market']}")
 
-        for s in filtered:
+            st.markdown(f"### {s['tagline']}")
+            st.write(s["full_description"])
 
-            icon = CATEGORY_COLORS.get(s["category"], "⚫")
+            st.markdown("### Revenue Model")
+            st.write(s["revenue_model"])
 
-            with st.expander(
-                f"{icon} {s['project_name']} · {s['current_stage']}"
-            ):
-
-                c1, c2 = st.columns(2)
-
-                c1.markdown(f"**Category:** {s['category']}")
-                c1.markdown(f"**Funding:** {s['target_funding']}")
-                c1.markdown(f"**Market:** {s['target_market']}")
-
-                c2.markdown(f"**Team Size:** {s['team_size']}")
-                c2.markdown(f"**Revenue:** {s['revenue_model']}")
-                c2.markdown(f"**Customers:** {s['current_customers']}")
-
-                st.markdown(f"**Description:** {s['full_description']}")
+            st.markdown("### Competition")
+            st.write(s["competition_analysis"])
 
 # ─────────────────────────────────────────────
 # TAB 2
 # ─────────────────────────────────────────────
-with tab_add:
+with tab2:
 
-    st.markdown("### Add Startup")
+    st.subheader("Add Startup")
 
-    with st.form("add_startup_form", clear_on_submit=True):
+    with st.form("startup_form"):
 
         c1, c2 = st.columns(2)
 
@@ -418,6 +400,11 @@ with tab_add:
 
         revenue_model = st.text_input("Revenue Model *")
 
+        competition_analysis = st.text_area(
+            "Competition Analysis",
+            height=80
+        )
+
         submitted = st.form_submit_button(
             "✅ Add Startup",
             use_container_width=True
@@ -432,12 +419,8 @@ with tab_add:
                 or not full_description
                 or not target_funding
                 or not current_stage
-                or not target_market
-                or not revenue_model
             ):
-
                 st.error("Please fill all required fields.")
-
             else:
 
                 new_startup = {
@@ -451,7 +434,7 @@ with tab_add:
                     "team_size": int(team_size),
                     "target_market": target_market,
                     "revenue_model": revenue_model,
-                    "competition_analysis": "",
+                    "competition_analysis": competition_analysis,
                     "current_customers": "",
                     "financial_projections": "",
                     "website_url": "",
@@ -468,12 +451,9 @@ with tab_add:
 # ─────────────────────────────────────────────
 # TAB 3
 # ─────────────────────────────────────────────
-with tab_match:
+with tab3:
 
-    st.markdown("### 🤖 AI Investor Matching")
-
-    if not st.session_state.api_key:
-        st.warning("Please add your Mistral API key.")
+    st.subheader("🤖 AI Matching")
 
     with st.form("investor_form"):
 
@@ -482,7 +462,8 @@ with tab_match:
         investor_name = c1.text_input("Investor Name *")
 
         investment_focus = c2.text_input(
-            "Investment Focus *"
+            "Investment Focus *",
+            placeholder="FinTech, AI, SaaS"
         )
 
         c3, c4 = st.columns(2)
@@ -494,53 +475,72 @@ with tab_match:
                 "Pre-Seed",
                 "Seed",
                 "Series A",
-                "Series B+",
+                "Series B",
                 "Any Stage"
             ]
         )
 
-        ticket_size = c4.text_input("Ticket Size *")
+        ticket_size = c4.text_input(
+            "Ticket Size *",
+            placeholder="$100K - $2M"
+        )
 
-        preferred_markets = st.text_input(
+        c5, c6 = st.columns(2)
+
+        preferred_markets = c5.text_input(
             "Preferred Markets"
         )
 
+        risk_appetite = c6.selectbox(
+            "Risk Appetite",
+            ["Low", "Medium", "High"]
+        )
+
         top_k = st.selectbox(
-            "Matches to Return",
+            "Number of Matches",
             [3, 4, 5],
             index=2
         )
 
+        additional_notes = st.text_area(
+            "Additional Notes"
+        )
+
         submit_match = st.form_submit_button(
-            "🤖 Find Matches",
+            "🚀 Find Matches",
             use_container_width=True,
-            disabled=not st.session_state.api_key
+            type="primary"
         )
 
     if submit_match:
 
-        investor = {
-            "name": investor_name,
-            "focus": investment_focus,
-            "stage": investment_stage,
-            "ticket": ticket_size,
-            "markets": preferred_markets,
-        }
+        if not st.session_state.api_key:
+            st.error("Please enter your Mistral API key.")
+        else:
 
-        with st.spinner("Analyzing startups..."):
+            investor = {
+                "name": investor_name,
+                "focus": investment_focus,
+                "stage": investment_stage,
+                "ticket": ticket_size,
+                "markets": preferred_markets,
+                "risk": risk_appetite,
+                "notes": additional_notes,
+            }
 
-            try:
+            with st.spinner("Analyzing startups..."):
 
-                result = run_ai_match(
-                    investor,
-                    top_k
-                )
+                try:
 
-                st.session_state.match_results = result
+                    result = run_ai_match(
+                        investor,
+                        top_k
+                    )
 
-            except Exception as e:
+                    st.session_state.match_results = result
 
-                st.error(f"Error: {e}")
+                except Exception as e:
+                    st.error(str(e))
 
     # Results
     if st.session_state.match_results:
@@ -549,10 +549,9 @@ with tab_match:
 
         st.divider()
 
-        st.markdown("## 🎯 Match Results")
+        st.subheader("📈 Match Results")
 
         if data.get("overall_analysis"):
-
             st.info(data["overall_analysis"])
 
         matches = data.get("matches", [])
@@ -562,47 +561,42 @@ with tab_match:
             score = m.get("match_score", 0)
 
             with st.expander(
-                f"#{i+1} — {m['startup_name']} ({score}/100)",
+                f"#{i+1} {m['startup_name']} — {score}/100",
                 expanded=(i == 0)
             ):
 
-                st.metric("Match Score", f"{score}%")
+                c1, c2, c3 = st.columns(3)
 
-                st.markdown(
-                    f"**Summary:** {m.get('match_summary','')}"
-                )
+                c1.metric("Match Score", score)
 
-                col1, col2 = st.columns(2)
+                st.markdown("### Summary")
+                st.write(m.get("match_summary", ""))
 
-                with col1:
+                st.markdown("### ✅ Strengths")
 
-                    st.markdown("### ✅ Strengths")
+                for s in m.get("key_strengths", []):
+                    st.markdown(f"- {s}")
 
-                    for s in m.get("key_strengths", []):
+                st.markdown("### ⚠️ Risks")
 
-                        st.markdown(f"- {s}")
-
-                with col2:
-
-                    st.markdown("### ⚠️ Risks")
-
-                    for r in m.get("key_risks", []):
-
-                        st.markdown(f"- {r}")
+                for r in m.get("key_risks", []):
+                    st.markdown(f"- {r}")
 
                 st.markdown(
                     f"""
-<div class="rec-box">
-💡 <strong>Recommendation:</strong>
-{m.get('recommendation','')}
-</div>
-""",
-                    unsafe_allow_html=True,
+                    <div class="rec-box">
+                    💡 <strong>Recommendation:</strong>
+                    {m.get('recommendation', '')}
+                    </div>
+                    """,
+                    unsafe_allow_html=True
                 )
 
+        # Export
         st.download_button(
             label="⬇️ Export JSON",
             data=json.dumps(data, indent=2),
-            file_name="venturematch_results.json",
+            file_name="venture_matches.json",
             mime="application/json",
+            use_container_width=True
         )
